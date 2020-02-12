@@ -1,0 +1,73 @@
+pipeline {
+agent none
+    stages{
+        stage("build"){
+        agent{
+                docker{
+				image 'maven:3.6.1-jdk-8-slim'
+				args '-v $HOME/.m2:/root/.m2' 
+				}
+			}
+
+	       when {
+            changeset "java/cmad-ms-users/*"
+        }
+			steps{
+				echo 'Compiling users service'
+				 dir('java/cmad-ms-users'){
+				sh 'mvn compile'
+			 }
+			} 
+		}
+        stage("test"){
+        agent{
+                docker{
+					image 'maven:3.6.1-jdk-8-slim'
+					args '-v $HOME/.m2:/root/.m2' }
+				}
+
+        when {
+            changeset "java/cmad-ms-users/*"
+        }
+            steps{
+				echo 'Running Unit Tets on users service..'
+				sh 'mvn -f java/cmad-ms-users/pom.xml clean test'
+			}
+		}
+		  stage("package"){
+		  agent{
+                docker{
+					image 'maven:3.6.1-jdk-8-slim'
+					args '-v $HOME/.m2:/root/.m2' }
+				}
+
+		  when { 
+		  	changeset "java/cmad-ms-users/*"
+		  	branch 'master'
+		  }
+            steps{
+				echo 'Packaging users service' 
+				dir('java/cmad-ms-users'){
+				 sh 'mvn package'
+				}
+			} }
+			 stage('docker-package'){ 
+			 agent any
+    steps{
+      echo 'Packaging users app with docker'
+      script{
+			docker.withRegistry('https://index.docker.io/v1/', 'dockerlogin') { 
+			def usersImage = docker.build("ruagrawa/users:v${env.BUILD_ID}", "java/cmad-ms-users")
+			usersImage.push()
+			usersImage.push("latest")
+			}
+			}
+		}
+		}
+
+		}
+	post{
+		always{
+		echo 'Building multibranch pipeline for users is completed..' }
+	} 
+}
